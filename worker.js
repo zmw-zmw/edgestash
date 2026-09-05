@@ -4434,7 +4434,7 @@ export default {
         }
         
         // File management routes
-        if (path === '/api/files' || path.startsWith('/api/files/')) {
+        if (path === '/api/files' || path.startsWith('/api/files/') || path.startsWith('/api/files%')) {
           const filePath = safeDecode(path.slice('/api/files'.length)) || '/';
           
           if (method === 'GET') {
@@ -4457,19 +4457,19 @@ export default {
         }
         
         // Folder zip download route（必须放在 /api/download 前缀匹配之前）
-        if (path === '/api/download-folder' || path.startsWith('/api/download-folder/')) {
+        if (path === '/api/download-folder' || path.startsWith('/api/download-folder/') || path.startsWith('/api/download-folder%')) {
           const filePath = safeDecode(path.slice('/api/download-folder'.length));
           return await handleDownloadFolder(request, env, filePath);
         }
 
         // Download route
-        if (path === '/api/download' || path.startsWith('/api/download/')) {
+        if (path === '/api/download' || path.startsWith('/api/download/') || path.startsWith('/api/download%')) {
           const filePath = safeDecode(path.slice('/api/download'.length));
           return await handleDownloadFile(request, env, filePath);
         }
         
         // Preview route
-        if (path === '/api/preview' || path.startsWith('/api/preview/')) {
+        if (path === '/api/preview' || path.startsWith('/api/preview/') || path.startsWith('/api/preview%')) {
           const filePath = safeDecode(path.slice('/api/preview'.length));
           return await handlePreviewFile(request, env, filePath);
         }
