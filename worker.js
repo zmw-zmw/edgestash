@@ -1172,6 +1172,55 @@ async function handleDeleteShare(request, env, shareId) {
   }
 }
 
+async function handleBatchDeleteShares(request, env) {
+  const auth = await requireAdmin(request, env);
+  if (auth instanceof Response) return auth;
+
+  try {
+    const body = await request.json().catch(() => null);
+    const ids = body && Array.isArray(body.shareIds) ? body.shareIds : null;
+    if (!ids || ids.length === 0) {
+      return jsonResponse({ success: false, message: 'shareIds 不能为空' }, 400);
+    }
+    if (ids.length > 500) {
+      return jsonResponse({ success: false, message: '单次最多删除 500 条' }, 400);
+    }
+    // shareId 由 generateId 生成（48 位字母数字），严格校验防 KV key 注入
+    const valid = ids.filter(id => typeof id === 'string' && /^[A-Za-z0-9]{8,64}$/.test(id));
+    if (valid.length !== ids.length) {
+      return jsonResponse({ success: false, message: '存在非法的分享 ID' }, 400);
+    }
+
+    let deleted = 0;
+    const failed = [];
+    for (const id of valid) {
+      try {
+        // 先确认存在再删，不存在的计入 failed 而非静默成功
+        const data = await env.KV_STORE.get(`share:${id}`);
+        if (data === null) { failed.push(id); continue; }
+        await env.KV_STORE.delete(`share:${id}`);
+        deleted++;
+      } catch (e) {
+        failed.push(id);
+      }
+    }
+
+    if (deleted > 0) {
+      const totalShares = parseInt(await env.KV_STORE.get('stats:totalShares') || '0');
+      await env.KV_STORE.put('stats:totalShares', String(Math.max(0, totalShares - deleted)));
+    }
+
+    return jsonResponse({
+      success: true,
+      deleted,
+      failed,
+      message: failed.length ? `已删除 ${deleted} 条，${failed.length} 条失败或不存在` : `已删除 ${deleted} 条分享链接`
+    });
+  } catch (e) {
+    return jsonResponse({ success: false, message: '批量删除失败: ' + e.message }, 500);
+  }
+}
+
 // 汇总某用户前缀下所有对象的大小（分页）
 // ============ 文件夹打包下载（流式 ZIP，不落盘不占内存）============
 const CRC_TABLE = (() => {
@@ -3633,11 +3682,13 @@ const ADMIN_PAGE = `
       <div class="card">
         <div class="card-header">
           <div class="card-title">分享链接管理</div>
+          <button class="btn btn-sm btn-danger" id="batchDeleteSharesBtn" onclick="batchDeleteShares()" disabled>删除选中</button>
         </div>
         <div class="table-container">
           <table>
             <thead>
               <tr>
+                <th style="width:36px;"><input type="checkbox" id="sharesSelectAll" onchange="toggleAllShares(this.checked)" style="vertical-align:middle;"></th>
                 <th>文件名</th>
                 <th>分享ID</th>
                 <th>密码保护</th>
@@ -3842,12 +3893,14 @@ const ADMIN_PAGE = `
           const tbody = document.getElementById('sharesTable');
           
           if (data.shares.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">暂无分享链接</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">暂无分享链接</td></tr>';
+            updateShareBatchBar();
             return;
           }
-          
+
           tbody.innerHTML = data.shares.map(share => \`
             <tr>
+              <td><input type="checkbox" class="share-check" data-share-id="\${share.shareId}" onchange="updateShareBatchBar()" style="vertical-align:middle;"></td>
               <td>\${escapeHtml(share.fileName)}</td>
               <td><code>\${share.shareId}</code></td>
               <td>\${share.passwordHash ? '是' : '否'}</td>
@@ -3864,9 +3917,51 @@ const ADMIN_PAGE = `
               </td>
             </tr>
           \`).join('');
+          const selectAll = document.getElementById('sharesSelectAll');
+          if (selectAll) selectAll.checked = false;
+          updateShareBatchBar();
         }
       } catch (error) {
         showToast('加载分享列表失败', 'error');
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    function toggleAllShares(checked) {
+      document.querySelectorAll('.share-check').forEach(cb => { cb.checked = checked; });
+      updateShareBatchBar();
+    }
+
+    function updateShareBatchBar() {
+      const btn = document.getElementById('batchDeleteSharesBtn');
+      if (!btn) return;
+      const count = document.querySelectorAll('.share-check:checked').length;
+      btn.disabled = count === 0;
+      btn.textContent = count > 0 ? '删除选中(' + count + ')' : '删除选中';
+    }
+
+    async function batchDeleteShares() {
+      const ids = Array.from(document.querySelectorAll('.share-check:checked')).map(cb => cb.getAttribute('data-share-id'));
+      if (ids.length === 0) return;
+      if (!confirm('确定要删除选中的 ' + ids.length + ' 条分享链接吗？删除后链接立即失效。')) return;
+
+      showLoading(true);
+      try {
+        const response = await fetch('/api/admin/shares/batch-delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shareIds: ids })
+        });
+        const data = await response.json();
+        if (data.success) {
+          showToast(data.message || '批量删除完成', 'success');
+          loadShares();
+        } else {
+          showToast('批量删除失败: ' + data.message, 'error');
+        }
+      } catch (error) {
+        showToast('批量删除失败: ' + error.message, 'error');
       } finally {
         showLoading(false);
       }
@@ -4520,7 +4615,11 @@ export default {
         if (path === '/api/admin/shares' && method === 'GET') {
           return await handleListShares(request, env);
         }
-        
+
+        if (path === '/api/admin/shares/batch-delete' && method === 'POST') {
+          return await handleBatchDeleteShares(request, env);
+        }
+
         if (path.match(/^\/api\/admin\/shares\/[^/]+$/) && method === 'DELETE') {
           const shareId = path.split('/').pop();
           return await handleDeleteShare(request, env, shareId);
