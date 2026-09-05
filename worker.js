@@ -461,7 +461,7 @@ async function handleDeleteFile(request, env, path) {
     
     // Check if it's a folder (has objects with this prefix)
     const listed = await env.R2_BUCKET.list({ prefix: key + '/', limit: 1 });
-    
+
     if (listed.objects && listed.objects.length > 0) {
       // It's a folder, delete all contents recursively
       let cursor;
@@ -472,6 +472,12 @@ async function handleDeleteFile(request, env, path) {
         }
         cursor = batch.truncated ? batch.cursor : null;
       } while (cursor);
+    } else {
+      // 不是文件夹：目标文件必须真实存在，否则 404（避免"假成功"误导调用方）
+      const head = await env.R2_BUCKET.head(key);
+      if (!head) {
+        return jsonResponse({ success: false, message: '文件或文件夹不存在' }, 404);
+      }
     }
     
     // Try to delete the file itself
@@ -622,6 +628,7 @@ function buildFileResponse(object, status, range, filename, disposition, extraHe
   const headers = {
     'Content-Type': object.httpMetadata?.contentType || getMimeType(filename),
     'Accept-Ranges': 'bytes',
+    'X-Content-Type-Options': 'nosniff',
     ...(extraHeaders || {})
   };
   if (disposition) headers['Content-Disposition'] = disposition;
