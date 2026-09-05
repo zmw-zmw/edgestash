@@ -234,6 +234,7 @@ function jsonResponse(data, status = 200, headers = {}) {
     status,
     headers: {
       'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
       ...headers
     }
   });
@@ -247,6 +248,7 @@ function htmlResponse(html, status = 200, headers = {}) {
     status,
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-cache',
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'SAMEORIGIN',
       'Referrer-Policy': 'no-referrer',
