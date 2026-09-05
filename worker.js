@@ -3077,6 +3077,9 @@ const INDEX_PAGE = `
     }
     
     function navigateTo(path) {
+      // onclick 传参是整段 encodeURIComponent 过的（如 %2Fcode），必须先解码再入状态，
+      // 否则面包屑显示编码名、后续请求全带编码路径
+      try { path = decodeURIComponent(path); } catch (e) { /* 非法编码则按原样 */ }
       currentPath = path;
       loadFiles();
     }
