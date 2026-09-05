@@ -101,8 +101,11 @@ async function verifyJWT(token, secret) {
     
     const payload = JSON.parse(atob(encodedPayload.replace(/-/g, '+').replace(/_/g, '/')));
     
-    // Check expiration
-    if (payload.exp && Date.now() > payload.exp) return null;
+    // Check expiration（兼容旧毫秒令牌与新秒令牌，RFC 7519 要求秒）
+    if (payload.exp) {
+      const expMs = payload.exp > 1e12 ? payload.exp : payload.exp * 1000;
+      if (Date.now() > expMs) return null;
+    }
     
     return payload;
   } catch (e) {
@@ -244,6 +247,9 @@ function htmlResponse(html, status = 200, headers = {}) {
     status,
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'SAMEORIGIN',
+      'Referrer-Policy': 'no-referrer',
       ...headers
     }
   });
@@ -264,27 +270,27 @@ async function handleLogin(request, env) {
 
     const userData = await env.KV_STORE.get(`user:${email}`);
     if (!userData) {
-      return jsonResponse({ success: false, message: '用户不存在' }, 401);
+      return jsonResponse({ success: false, message: '用户名或密码错误' }, 401);
     }
 
     const user = JSON.parse(userData);
     const passwordHash = await hashPassword(password);
 
     if (user.passwordHash !== passwordHash) {
-      return jsonResponse({ success: false, message: '密码错误' }, 401);
+      return jsonResponse({ success: false, message: '用户名或密码错误' }, 401);
     }
 
     // 按用户在 KV 中的实际角色签发 JWT（管理员用户 role:'admin' 即获得管理员权限）
     const role = user.role || 'user';
     const token = await createJWT(
-      { email: user.email, role, exp: Date.now() + 24 * 60 * 60 * 1000 },
-      env.ADMIN_PASSWORD
+      { email: user.email, role, exp: Math.floor(Date.now() / 1000) + 86400 },
+      env.JWT_SECRET || env.ADMIN_PASSWORD
     );
 
     return jsonResponse(
       { success: true, role, email: user.email },
       200,
-      { 'Set-Cookie': `token=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400` }
+      { 'Set-Cookie': `token=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=86400` }
     );
   } catch (e) {
     return jsonResponse({ success: false, message: '登录失败: ' + e.message }, 500);
@@ -295,7 +301,7 @@ async function handleLogout() {
   return jsonResponse(
     { success: true },
     200,
-    { 'Set-Cookie': 'token=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0' }
+    { 'Set-Cookie': 'token=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0' }
   );
 }
 
@@ -305,7 +311,7 @@ async function verifyAuth(request, env) {
   
   if (!token) return null;
   
-  return await verifyJWT(token, env.ADMIN_PASSWORD);
+  return await verifyJWT(token, env.JWT_SECRET || env.ADMIN_PASSWORD);
 }
 
 async function requireAuth(request, env) {
