@@ -35,7 +35,7 @@
 
 ### 文件管理
 
-- **多用户与强隔离**：管理员创建用户，每个用户的文件按 `<用户名>/` 前缀在 R2 层面完全隔离
+- **多用户与强隔离**：首个注册用户自动成为管理员，管理员创建/审核用户，每个用户的文件按 `<用户名>/` 前缀在 R2 层面完全隔离
 - **自由用户名**：不要求邮箱格式，字母/数字/`_ . @ -`，1-64 位，全局唯一
 - **文件/文件夹**：新建文件夹（一次可建多级 `a/b/c`）、重命名（文件夹递归搬移）、删除（递归删除）
 - **统一上传弹窗**：单按钮入口，文件（多选）/文件夹（保留目录结构）双 tab，先选后传、确认上传
@@ -64,7 +64,7 @@
 
 - 深色玻璃拟态 UI，移动端自适应
 - 页面响应 `no-cache`（部署后刷新即最新），API `no-store`，文件响应 `nosniff`
-- 自助注册可选开关（`REGISTER_ENABLED`，默认关闭）
+- 自助注册：站点无用户时始终开放（用于引导管理员）；已有用户后由 `REGISTER_ENABLED` 开关控制（默认关闭）
 
 ## 相对上游的修复与增强
 
@@ -112,11 +112,11 @@ README 中提到的「管理员登录无反应」已知 Bug 也已修复。
    |---|---|---|
    | R2 绑定 | `R2_BUCKET` | 选择第 1 步创建的桶 |
    | KV 绑定 | `KV_STORE` | 选择第 2 步创建的命名空间 |
-   | Secret | `ADMIN_PASSWORD` | 管理员登录密码（也是初始 JWT 密钥，**不会明文存储**） |
+   | Secret | `ADMIN_PASSWORD` | JWT 签名密钥回退（推荐配置独立 `JWT_SECRET`；**不会明文存储**） |
    | Secret（可选，推荐） | `JWT_SECRET` | 独立 JWT 签名密钥，任意长随机字符串 |
-   | 环境变量（可选） | `REGISTER_ENABLED` | 设为 `true` 开放自助注册，默认关闭 |
+   | 环境变量（可选） | `REGISTER_ENABLED` | 站点已有用户后，设为 `true` 开放自助注册 |
 
-6. **完成**：访问 `https://<worker-name>.<subdomain>.workers.dev`，用用户名 `admin` + `ADMIN_PASSWORD` 登录
+6. **完成**：访问 `https://<worker-name>.<subdomain>.workers.dev` → 打开注册页，**第一个注册的账号自动成为管理员**（用户名密码自定）。此后注册遵循 `REGISTER_ENABLED` 开关，新用户为普通用户，由管理员在后台创建或审核
 7. 可选：在 Worker → 设置 → 域和路由 绑定自定义域名
 
 ### 方式二：Wrangler 命令行
@@ -150,7 +150,7 @@ npx wrangler deploy
 | POST | `/api/login` | 登录（`{email, password}`），成功后种 HttpOnly Cookie |
 | POST | `/api/logout` | 退出登录 |
 | GET | `/api/auth/check` | 检查当前登录状态 |
-| POST | `/api/register` | 自助注册（需 `REGISTER_ENABLED=true`） |
+| POST | `/api/register` | 注册：站点无用户时首注册即管理员；已有用户需 `REGISTER_ENABLED=true` |
 | GET | `/api/files/<目录>` | 列目录 |
 | POST | `/api/files/<目标目录>` | 上传文件（multipart，字段名 `file`） |
 | DELETE | `/api/files/<路径>` | 删除文件/递归删除文件夹（目标不存在返回 404） |
@@ -174,7 +174,7 @@ npx wrangler deploy
 
 ## 安全设计
 
-- 密码仅存 PBKDF2 哈希，任何人都无法查看用户明文密码
+- 密码仅存 PBKDF2-SHA256 哈希（每密码独立随机盐，恒定时间比较）；历史版本的无盐 SHA-256 哈希会在用户下次登录时自动升级，任何人都无法查看明文密码
 - JWT (HS256) 签名密钥推荐使用独立的 `JWT_SECRET`（未配置时回退 `ADMIN_PASSWORD`）
 - 会话 Cookie：`HttpOnly` + `Secure` + `SameSite=Strict`
 - 用户文件按 `<用户名>/` 前缀强隔离；分享记录校验 owner，游客仅能访问分享内文件
@@ -184,11 +184,11 @@ npx wrangler deploy
 
 ## 常见问题
 
-**Q：首次登录用什么账号？**
-用户名 `admin`，密码为你在绑定里设置的 `ADMIN_PASSWORD`。
+**Q：管理员是怎么产生的？**
+全新部署后站点没有任何用户，此时注册页始终开放——**第一个注册的账号自动成为管理员**。之后注册需 `REGISTER_ENABLED=true`，且都只是普通用户。
 
 **Q：忘了管理员密码怎么办？**
-在 KV 中删除 `user:admin` 这条记录，然后用 `ADMIN_PASSWORD` 重新登录即可重建管理员。
+在 KV 中删除 `user:<管理员用户名>` 这条记录，站点即回到「无用户」状态，重新注册即可再次引导出管理员（用户名可以换新的）。
 
 **Q：免费额度够用吗？**
 Cloudflare 免费版 Workers 每天 10 万请求、R2 免费 10 GB 存储，个人/小团队使用基本够用。

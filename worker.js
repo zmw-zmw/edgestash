@@ -30,14 +30,73 @@ function generateId(length = 16) {
 }
 
 /**
- * Hash a password using SHA-256
+ * Password hashing.
+ * 新格式：PBKDF2-SHA256（每密码随机盐）→ "pbkdf2$<iter>$<saltB64url>$<hashB64url>"
+ * 旧格式：无盐 SHA-256 hex（上游遗留），登录校验成功后自动升级为新格式
  */
-async function hashPassword(password) {
+const PBKDF2_ITERATIONS = 10000; // Worker CPU 友好的迭代次数（免费版 10ms 限制内）
+
+function bytesToB64u(bytes) {
+  let s = '';
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+
+function b64uToBytes(s) {
+  s = s.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) s += '=';
+  return Uint8Array.from(atob(s), c => c.charCodeAt(0));
+}
+
+async function pbkdf2Derive(password, saltBytes, iterations) {
   const encoder = new TextEncoder();
-  const data = encoder.encode(password);
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: saltBytes, iterations },
+    key, 256
+  );
+  return new Uint8Array(bits);
+}
+
+async function sha256Hex(text) {
+  const data = new TextEncoder().encode(text);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function hashPassword(password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const bits = await pbkdf2Derive(password, salt, PBKDF2_ITERATIONS);
+  return 'pbkdf2$' + PBKDF2_ITERATIONS + '$' + bytesToB64u(salt) + '$' + bytesToB64u(bits);
+}
+
+function timingSafeEqualStr(a, b) {
+  if (a.length !== b.length) return false;
+  let r = 0;
+  for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return r === 0;
+}
+
+async function verifyPassword(password, stored) {
+  if (typeof stored !== 'string') return false;
+  if (stored.startsWith('pbkdf2$')) {
+    const parts = stored.split('$');
+    if (parts.length !== 4) return false;
+    const iterations = parseInt(parts[1], 10);
+    if (!iterations || iterations < 1 || iterations > 10000000) return false;
+    try {
+      const salt = b64uToBytes(parts[2]);
+      const actual = bytesToB64u(await pbkdf2Derive(password, salt, iterations));
+      return timingSafeEqualStr(actual, parts[3]);
+    } catch (e) {
+      return false;
+    }
+  }
+  // 旧格式：无盐 SHA-256 hex
+  const legacy = await sha256Hex(password);
+  return timingSafeEqualStr(legacy, stored);
 }
 
 /**
@@ -270,16 +329,23 @@ async function handleLogin(request, env) {
       return jsonResponse({ success: false, message: '请输入用户名和密码' }, 400);
     }
 
-    const userData = await env.KV_STORE.get(`user:${email}`);
+    let userData = await env.KV_STORE.get(`user:${email}`);
+
     if (!userData) {
       return jsonResponse({ success: false, message: '用户名或密码错误' }, 401);
     }
 
     const user = JSON.parse(userData);
-    const passwordHash = await hashPassword(password);
+    const ok = await verifyPassword(password, user.passwordHash);
 
-    if (user.passwordHash !== passwordHash) {
+    if (!ok) {
       return jsonResponse({ success: false, message: '用户名或密码错误' }, 401);
+    }
+
+    // 旧格式（无盐 SHA-256）登录成功后自动升级为 PBKDF2
+    if (!user.passwordHash.startsWith('pbkdf2$')) {
+      user.passwordHash = await hashPassword(password);
+      await env.KV_STORE.put(`user:${email}`, JSON.stringify(user));
     }
 
     // 按用户在 KV 中的实际角色签发 JWT（管理员用户 role:'admin' 即获得管理员权限）
@@ -739,8 +805,8 @@ async function readShareCredentials(request) {
 async function checkSharePasswordWith(share, password) {
   if (!share.passwordHash) return null;
   if (!password) return jsonResponse({ success: false, message: '请输入密码' }, 401);
-  const hash = await hashPassword(password);
-  if (hash !== share.passwordHash) return jsonResponse({ success: false, message: '密码错误' }, 401);
+  const ok = await verifyPassword(password, share.passwordHash);
+  if (!ok) return jsonResponse({ success: false, message: '密码错误' }, 401);
   return null;
 }
 
@@ -1603,9 +1669,14 @@ async function handleCreateUser(request, env) {
 // ============ 自助注册（env.REGISTER_ENABLED === 'true' 开启）============
 async function handleRegister(request, env) {
   try {
-    if (env.REGISTER_ENABLED !== 'true') {
+    // 首次部署引导：站点还没有任何用户时，第一个注册的人自动成为管理员（用户名/密码自定）。
+    // 站点已有用户后，注册遵循 REGISTER_ENABLED 开关。
+    const listed = await env.KV_STORE.list({ prefix: 'user:', limit: 1 });
+    const siteHasUsers = listed.keys.length > 0;
+    if (siteHasUsers && env.REGISTER_ENABLED !== 'true') {
       return jsonResponse({ success: false, message: '本站未开放注册' }, 403);
     }
+
     const body = await request.json();
     const uname = typeof body.username === 'string' ? body.username.trim() : '';
     const { password } = body;
@@ -1628,12 +1699,12 @@ async function handleRegister(request, env) {
     const userData = {
       email: uname,
       passwordHash: await hashPassword(password),
-      role: 'user',
+      role: siteHasUsers ? 'user' : 'admin',
       quotaBytes: 0,
       createdAt: Date.now()
     };
     await env.KV_STORE.put(`user:${uname}`, JSON.stringify(userData));
-    return jsonResponse({ success: true, message: '注册成功，请登录' });
+    return jsonResponse({ success: true, message: userData.role === 'admin' ? '注册成功，你已自动成为本站管理员，请登录' : '注册成功，请登录' });
   } catch (e) {
     return jsonResponse({ success: false, message: '注册失败: ' + e.message }, 500);
   }
