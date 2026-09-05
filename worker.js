@@ -1671,8 +1671,17 @@ async function handleRegister(request, env) {
   try {
     // 首次部署引导：站点还没有任何用户时，第一个注册的人自动成为管理员（用户名/密码自定）。
     // 站点已有用户后，注册遵循 REGISTER_ENABLED 开关。
-    const listed = await env.KV_STORE.list({ prefix: 'user:', limit: 1 });
-    const siteHasUsers = listed.keys.length > 0;
+    //
+    // KV 是最终一致的：首个用户写入后短时间内 list() 仍返回空，会导致连续注册出多个管理员。
+    // 因此用 R2（强一致）做引导标记兜底：标记键绑定部署的 ADMIN_PASSWORD 哈希，防跨部署串扰。
+    let markerKey = null;
+    let siteHasUsers = (await env.KV_STORE.list({ prefix: 'user:', limit: 1 })).keys.length > 0;
+    if (!siteHasUsers) {
+      markerKey = 'config:bootstrap:' + (await sha256Hex(env.ADMIN_PASSWORD || ''));
+      if (await env.R2_BUCKET.head(markerKey)) {
+        siteHasUsers = true; // 已引导过（其他写入节点尚未在 KV 可见）
+      }
+    }
     if (siteHasUsers && env.REGISTER_ENABLED !== 'true') {
       return jsonResponse({ success: false, message: '本站未开放注册' }, 403);
     }
@@ -1704,6 +1713,10 @@ async function handleRegister(request, env) {
       createdAt: Date.now()
     };
     await env.KV_STORE.put(`user:${uname}`, JSON.stringify(userData));
+    // 首个管理员落地后立刻写 R2 强一致标记，封死后续注册的引导窗口
+    if (userData.role === 'admin' && markerKey) {
+      await env.R2_BUCKET.put(markerKey, 'first-admin');
+    }
     return jsonResponse({ success: true, message: userData.role === 'admin' ? '注册成功，你已自动成为本站管理员，请登录' : '注册成功，请登录' });
   } catch (e) {
     return jsonResponse({ success: false, message: '注册失败: ' + e.message }, 500);
