@@ -2834,11 +2834,8 @@ const INDEX_PAGE = `
 
       <div class="toolbar">
         <button class="btn btn-primary" onclick="showNewFolderModal()">📁 新建文件夹</button>
-        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">📤 上传文件</button>
+        <button class="btn btn-primary" onclick="showUploadModal()">📤 上传</button>
         <button class="btn btn-secondary" onclick="openSharePicker()">🔗 创建分享</button>
-        <button class="btn btn-primary" onclick="document.getElementById('dirInput').click()">📂 上传文件夹</button>
-        <input type="file" id="fileInput" multiple style="display: none;" onchange="handleFileUpload(event)">
-        <input type="file" id="dirInput" multiple webkitdirectory style="display: none;" onchange="handleDirUpload(event)">
       </div>
     </div>
 
@@ -2886,6 +2883,29 @@ const INDEX_PAGE = `
     </div>
   </div>
   
+  <!-- Upload Modal -->
+  <div class="modal-overlay" id="uploadModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">上传到 <span id="uploadDestLabel">/</span></div>
+        <button class="modal-close" onclick="closeUploadModal()">&times;</button>
+      </div>
+      <div class="share-src-tabs">
+        <button type="button" class="share-src-tab active" id="upTabFile" onclick="switchUploadMode('file')">📄 选择文件</button>
+        <button type="button" class="share-src-tab" id="upTabDir" onclick="switchUploadMode('dir')">📂 选择文件夹</button>
+      </div>
+      <div class="share-modal-upload">
+        <div class="upload-area" id="uploadArea" onclick="triggerUploadPick()">
+          <div id="uploadAreaHint">点击选择要上传的文件（可多选）</div>
+        </div>
+        <input type="file" id="uploadModalFileInput" multiple style="display: none;" onchange="onUploadPick(event)">
+        <input type="file" id="uploadModalDirInput" multiple webkitdirectory style="display: none;" onchange="onUploadPick(event)">
+        <div id="uploadPicked" class="share-upload-dest" style="display: none;"></div>
+      </div>
+      <button type="button" class="btn btn-primary" id="uploadStartBtn" style="width: 100%; margin-top: 12px;" onclick="startUploadFromModal()" disabled>开始上传</button>
+    </div>
+  </div>
+
   <!-- Share Modal -->
   <div class="modal-overlay" id="shareModal">
     <div class="modal">
@@ -3222,24 +3242,116 @@ const INDEX_PAGE = `
     
     // ========== File Operations ==========
     
-    async function handleFileUpload(event) {
-      const files = event.target.files;
+    // ===== 上传弹窗（文件/文件夹统一入口，样式对齐创建分享弹窗）=====
+    let uploadMode = 'file'; // 'file' | 'dir'
+    let uploadPickedFiles = [];
+
+    function fmtSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+      return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+    }
+
+    function showUploadModal() {
+      uploadPickedFiles = [];
+      switchUploadMode('file');
+      document.getElementById('uploadDestLabel').textContent = currentPath;
+      document.getElementById('uploadModal').classList.add('active');
+    }
+
+    function closeUploadModal() {
+      document.getElementById('uploadModal').classList.remove('active');
+      resetUploadModalState();
+    }
+
+    function resetUploadModalState() {
+      uploadPickedFiles = [];
+      const fi = document.getElementById('uploadModalFileInput');
+      const di = document.getElementById('uploadModalDirInput');
+      if (fi) fi.value = '';
+      if (di) di.value = '';
+      renderUploadPicked();
+    }
+
+    function switchUploadMode(mode) {
+      uploadMode = mode;
+      document.getElementById('upTabFile').classList.toggle('active', mode === 'file');
+      document.getElementById('upTabDir').classList.toggle('active', mode === 'dir');
+      document.getElementById('uploadAreaHint').textContent = mode === 'file'
+        ? '点击选择要上传的文件（可多选）'
+        : '点击选择要上传的文件夹（保留目录结构）';
+      // 切换模式时清空已选，避免文件/文件夹选择混在一起
+      resetUploadModalState();
+    }
+
+    function triggerUploadPick() {
+      const input = uploadMode === 'file'
+        ? document.getElementById('uploadModalFileInput')
+        : document.getElementById('uploadModalDirInput');
+      input.click();
+    }
+
+    function onUploadPick(event) {
+      uploadPickedFiles = Array.from(event.target.files || []);
+      renderUploadPicked();
+    }
+
+    function renderUploadPicked() {
+      const box = document.getElementById('uploadPicked');
+      const btn = document.getElementById('uploadStartBtn');
+      if (!uploadPickedFiles.length) {
+        box.style.display = 'none';
+        box.innerHTML = '';
+        btn.disabled = true;
+        btn.textContent = '开始上传';
+        return;
+      }
+      let total = 0;
+      uploadPickedFiles.forEach(f => { total += (f.size || 0); });
+      let label;
+      if (uploadMode === 'dir') {
+        const rel = uploadPickedFiles[0].webkitRelativePath || uploadPickedFiles[0].name;
+        const top = rel.split('/')[0];
+        label = '已选择文件夹「' + top + '」：' + uploadPickedFiles.length + ' 个文件，共 ' + fmtSize(total);
+      } else {
+        label = '已选择 ' + uploadPickedFiles.length + ' 个文件，共 ' + fmtSize(total);
+      }
+      box.textContent = label;
+      box.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = '开始上传（' + uploadPickedFiles.length + ' 个文件）';
+    }
+
+    function startUploadFromModal() {
+      if (!uploadPickedFiles.length) return;
+      const files = uploadPickedFiles;
+      document.getElementById('uploadModal').classList.remove('active');
+      resetUploadModalState();
+      if (uploadMode === 'dir') {
+        uploadDirList(files);
+      } else {
+        uploadFilesList(files);
+      }
+    }
+
+    async function uploadFilesList(files) {
       if (!files.length) return;
-      
+
       showLoading(true);
-      
+
       for (const file of files) {
         try {
           const formData = new FormData();
           formData.append('file', file);
-          
+
           const response = await fetch('/api/files' + currentPath, {
             method: 'POST',
             body: formData
           });
-          
+
           const data = await response.json();
-          
+
           if (data.success) {
             showToast('文件 ' + file.name + ' 上传成功', 'success');
           } else {
@@ -3249,14 +3361,12 @@ const INDEX_PAGE = `
           showToast('文件 ' + file.name + ' 上传失败: ' + error.message, 'error');
         }
       }
-      
-      event.target.value = '';
+
       loadFiles();
     }
 
     // 文件夹整体上传（webkitdirectory）：逐级建目录后逐个上传
-    async function handleDirUpload(event) {
-      const files = Array.from(event.target.files || []);
+    async function uploadDirList(files) {
       if (!files.length) return;
       showLoading(true);
       try {
@@ -3294,7 +3404,6 @@ const INDEX_PAGE = `
       } catch (e) {
         showToast('文件夹上传失败: ' + e.message, 'error');
       } finally {
-        event.target.value = '';
         showLoading(false);
       }
     }
