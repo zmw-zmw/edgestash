@@ -1,0 +1,20 @@
+name = "edgestash"
+main = "worker.js"
+compatibility_date = "2025-08-16"
+
+# 按需修改：你的 R2 桶名
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "edgestash"
+
+# 按需修改：你的 KV namespace id
+[[kv_namespaces]]
+binding = "KV_STORE"
+id = "00000000000000000000000000000000"
+
+[vars]
+# 设为 "true" 开放自助注册（默认关闭）
+REGISTER_ENABLED = "false"
+
+# ADMIN_PASSWORD 用 secret 存储，不要写进本文件：
+#   npx wrangler secret put ADMIN_PASSWORD
