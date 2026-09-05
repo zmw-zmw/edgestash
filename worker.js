@@ -1238,6 +1238,30 @@ async function handleDeleteShare(request, env, shareId) {
   }
 }
 
+// 管理后台统计数据（合计自 KV 计数器）
+async function handleAdminStats(request, env) {
+  const auth = await requireAdmin(request, env);
+  if (auth instanceof Response) return auth;
+
+  try {
+    const [totalShares, totalViews, totalDownloads] = await Promise.all([
+      env.KV_STORE.get('stats:totalShares'),
+      env.KV_STORE.get('stats:totalViews'),
+      env.KV_STORE.get('stats:totalDownloads')
+    ]);
+    return jsonResponse({
+      success: true,
+      stats: {
+        totalShares: parseInt(totalShares || '0'),
+        totalViews: parseInt(totalViews || '0'),
+        totalDownloads: parseInt(totalDownloads || '0')
+      }
+    });
+  } catch (e) {
+    return jsonResponse({ success: false, message: '获取统计失败: ' + e.message }, 500);
+  }
+}
+
 async function handleBatchDeleteShares(request, env) {
   const auth = await requireAdmin(request, env);
   if (auth instanceof Response) return auth;
@@ -4805,6 +4829,10 @@ export default {
         }
         
         // Admin routes
+        if (path === '/api/admin/stats' && method === 'GET') {
+          return await handleAdminStats(request, env);
+        }
+
         if (path === '/api/admin/shares' && method === 'GET') {
           return await handleListShares(request, env);
         }
