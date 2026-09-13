@@ -3269,7 +3269,10 @@ const INDEX_PAGE = `
       const filenameEl = document.getElementById('previewFilename');
       const downloadBtn = document.getElementById('previewDownloadBtn');
       
-      filenameEl.textContent = filename;
+      // filename 是 onclick 传入的 encodeURIComponent 结果，需解码后显示
+      let previewName = filename;
+      try { previewName = decodeURIComponent(filename); } catch (e) { /* 畸形编码按原样 */ }
+      filenameEl.textContent = previewName;
       downloadBtn.onclick = () => downloadFile(path);
       
       // Show loading
@@ -3561,7 +3564,11 @@ const INDEX_PAGE = `
     
     function showRenameModal(path, currentName) {
       document.getElementById('renameFilePath').value = path;
-      document.getElementById('newFileName').value = currentName;
+      // onclick 传入的 currentName 是 encodeURIComponent 过的，必须解码后再显示，
+      // 否则中文/空格会原样显示成 %E4%B8%AD... 且直接提交会把文件改名成编码串
+      let displayName = currentName;
+      try { displayName = decodeURIComponent(currentName); } catch (e) { /* 畸形编码按原样 */ }
+      document.getElementById('newFileName').value = displayName;
       document.getElementById('renameModal').classList.add('active');
     }
     
