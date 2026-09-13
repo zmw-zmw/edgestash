@@ -3195,7 +3195,6 @@ const INDEX_PAGE = `
             <div class="file-meta">文件夹</div>
             <div class="file-actions">
               <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); showRenameModal('\${encodeURIComponent(folder.path)}', '\${encodeURIComponent(folder.name)}')">重命名</button>
-              <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); showShareModal('\${encodeURIComponent(folder.path)}', 'folder')">分享</button>
               <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); downloadFolder('\${encodeURIComponent(folder.path)}')">打包</button>
               <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); deleteFile('\${encodeURIComponent(folder.path)}')">删除</button>
             </div>
@@ -3216,7 +3215,6 @@ const INDEX_PAGE = `
             <div class="file-actions">
               \${previewType ? '<button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); previewFile(\\'' + encodeURIComponent(file.path) + '\\', \\'' + previewType + '\\', \\'' + encodeURIComponent(file.name) + '\\')">预览</button>' : ''}
               <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); downloadFile('\${encodeURIComponent(file.path)}')">下载</button>
-              <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); showShareModal('\${encodeURIComponent(file.path)}')">分享</button>
               <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); showRenameModal('\${encodeURIComponent(file.path)}', '\${encodeURIComponent(file.name)}')">重命名</button>
               <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); deleteFile('\${encodeURIComponent(file.path)}')">删除</button>
             </div>
