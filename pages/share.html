@@ -1,0 +1,1258 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>文件分享 - EdgeStash</title>
+  
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  :root {
+    --primary: #818cf8;
+    --primary-dark: #6366f1;
+    --primary-light: #a5b4fc;
+    --secondary: #a78bfa;
+    --accent: #22d3ee;
+    --background: #0a0e1a;
+    --surface: rgba(255, 255, 255, 0.045);
+    --surface-light: rgba(255, 255, 255, 0.09);
+    --border: rgba(255, 255, 255, 0.09);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --text: #eef2ff;
+    --text-muted: #8b93b0;
+    --success: #34d399;
+    --warning: #fbbf24;
+    --error: #f87171;
+    --gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #22d3ee 100%);
+    --radius: 14px;
+    --shadow-lg: 0 18px 50px -12px rgba(0, 0, 0, 0.55);
+    --glow: 0 8px 28px -6px rgba(99, 102, 241, 0.5);
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    background:
+      radial-gradient(1100px 700px at 12% -8%, rgba(99, 102, 241, 0.20), transparent 60%),
+      radial-gradient(900px 650px at 108% 12%, rgba(34, 211, 238, 0.13), transparent 55%),
+      radial-gradient(1000px 700px at 50% 115%, rgba(139, 92, 246, 0.13), transparent 60%),
+      var(--background);
+    background-attachment: fixed;
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection { background: rgba(99, 102, 241, 0.4); }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.24);
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  a { color: var(--primary-light); text-decoration: none; }
+
+  .container {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 24px 20px 60px;
+  }
+
+  /* ========== Header ========== */
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 28px;
+    background: rgba(10, 14, 26, 0.72);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .header::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 5%, rgba(129, 140, 248, 0.55), rgba(34, 211, 238, 0.4), transparent 95%);
+    pointer-events: none;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    background: var(--gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  .logo::before {
+    content: '';
+    width: 13px;
+    height: 13px;
+    border-radius: 4px;
+    background: conic-gradient(from 210deg, #6366f1, #8b5cf6, #22d3ee, #6366f1);
+    box-shadow: 0 0 14px rgba(99, 102, 241, 0.8);
+  }
+
+  .header-actions { display: flex; gap: 10px; }
+
+  .user-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 15px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .user-chip::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--gradient);
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.8);
+    flex-shrink: 0;
+  }
+
+  /* ========== Buttons ========== */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 10px 18px;
+    border: 1px solid transparent;
+    border-radius: 11px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, border-color 0.16s ease, filter 0.16s ease;
+  }
+
+  .btn:active { transform: translateY(0) scale(0.97); }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #6d7cff 0%, #9d5cff 55%, #2dd4ff 100%);
+    color: #fff;
+    box-shadow: 0 4px 16px -4px rgba(109, 124, 255, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  }
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 26px -6px rgba(109, 124, 255, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+    filter: brightness(1.06);
+  }
+
+  .btn-secondary {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+    border-color: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(8px);
+  }
+  .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.11);
+    border-color: rgba(129, 140, 248, 0.5);
+    color: #fff;
+    transform: translateY(-1px);
+  }
+
+  .btn-danger {
+    background: rgba(248, 113, 113, 0.10);
+    color: var(--error);
+    border-color: rgba(248, 113, 113, 0.28);
+  }
+  .btn-danger:hover {
+    background: rgba(248, 113, 113, 0.20);
+    border-color: rgba(248, 113, 113, 0.5);
+    transform: translateY(-1px);
+  }
+
+  .btn-sm {
+    padding: 5px 11px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: 8px;
+  }
+
+  /* ========== Forms ========== */
+  .form-group { margin-bottom: 18px; }
+
+  .form-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 7px;
+    letter-spacing: 0.3px;
+  }
+
+  .form-input,
+  .form-select {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 14px;
+    font-family: inherit;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    outline: none;
+    transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+  }
+
+  .form-input::placeholder { color: rgba(139, 147, 176, 0.55); }
+
+  .form-input:focus,
+  .form-select:focus {
+    border-color: var(--primary);
+    background: rgba(99, 102, 241, 0.07);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+  }
+
+  .form-select { cursor: pointer; }
+  .form-select option { background: #141a2e; color: var(--text); }
+
+  /* ========== Login ========== */
+  .login-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .login-container::before,
+  .login-container::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(90px);
+    pointer-events: none;
+  }
+
+  .login-container::before {
+    width: 480px;
+    height: 480px;
+    background: rgba(99, 102, 241, 0.26);
+    top: -140px;
+    left: -120px;
+    animation: float 9s ease-in-out infinite alternate;
+  }
+
+  .login-container::after {
+    width: 420px;
+    height: 420px;
+    background: rgba(34, 211, 238, 0.18);
+    bottom: -130px;
+    right: -110px;
+    animation: float 11s ease-in-out infinite alternate-reverse;
+  }
+
+  .login-card {
+    position: relative;
+    z-index: 1;
+    width: min(410px, 100%);
+    background: rgba(17, 23, 42, 0.78);
+    border: 1px solid var(--border-strong);
+    border-radius: 22px;
+    padding: 42px 36px;
+    box-shadow: var(--shadow-lg);
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
+    animation: fadeUp 0.5s ease;
+  }
+
+  .login-header { text-align: center; margin-bottom: 30px; }
+
+  .login-logo {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    background: var(--gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  .login-subtitle {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-top: 6px;
+  }
+
+  /* ========== Breadcrumb / Toolbar / Card ========== */
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 9px 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    font-size: 13.5px;
+    backdrop-filter: blur(10px);
+  }
+
+  .breadcrumb-item { color: var(--text-muted); transition: color 0.15s; cursor: pointer; }
+  a.breadcrumb-item:hover { color: var(--primary-light); }
+  .breadcrumb-item.active { color: var(--text); font-weight: 600; }
+  .breadcrumb-separator { color: rgba(139, 147, 176, 0.4); margin: 0 4px; user-select: none; }
+
+  .page-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+
+  .toolbar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .file-panel { min-height: 220px; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    animation: fadeUp 0.35s ease;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .card-title { font-size: 16px; font-weight: 700; }
+
+  /* ========== File Grid ========== */
+  .file-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 14px;
+  }
+
+  .file-item {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    padding: 18px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    cursor: pointer;
+    animation: fadeUp 0.3s ease both;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  }
+
+  .file-item:hover {
+    transform: translateY(-4px);
+    border-color: rgba(129, 140, 248, 0.55);
+    background: rgba(255, 255, 255, 0.07);
+    box-shadow: 0 18px 40px -16px rgba(99, 102, 241, 0.45);
+  }
+
+  .file-icon {
+    width: 52px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    border-radius: 15px;
+    background: linear-gradient(135deg, rgba(109, 124, 255, 0.22), rgba(45, 212, 255, 0.12));
+    border: 1px solid rgba(129, 140, 248, 0.3);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+
+  .file-name {
+    font-size: 14.5px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .file-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .file-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: auto;
+    padding-top: 6px;
+  }
+
+  /* ========== Empty State ========== */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 70px 20px;
+    color: var(--text-muted);
+  }
+
+  .empty-icon {
+    width: 88px;
+    height: 88px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 42px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, rgba(99, 102, 241, 0.25), rgba(34, 211, 238, 0.10));
+    border: 1px solid var(--border-strong);
+  }
+
+  /* ========== Badges ========== */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  .badge-info { background: rgba(34, 211, 238, 0.12); color: var(--accent); border: 1px solid rgba(34, 211, 238, 0.25); }
+  .badge-success { background: rgba(52, 211, 153, 0.12); color: var(--success); border: 1px solid rgba(52, 211, 153, 0.25); }
+  .badge-warning { background: rgba(251, 191, 36, 0.12); color: var(--warning); border: 1px solid rgba(251, 191, 36, 0.25); }
+  .badge-error { background: rgba(248, 113, 113, 0.12); color: var(--error); border: 1px solid rgba(248, 113, 113, 0.25); }
+
+  /* ========== Tabs (admin) ========== */
+  .tabs {
+    display: flex;
+    gap: 6px;
+    padding: 5px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    width: fit-content;
+    margin-bottom: 22px;
+    backdrop-filter: blur(10px);
+  }
+
+  .tab {
+    padding: 9px 20px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+  }
+
+  .tab:hover { color: var(--text); }
+
+  .tab.active {
+    background: var(--gradient);
+    color: #fff;
+    box-shadow: 0 4px 14px -4px rgba(99, 102, 241, 0.5);
+  }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; animation: fadeUp 0.3s ease; }
+
+  /* ========== Stats ========== */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+  }
+
+  .stat-card {
+    position: relative;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 26px 24px;
+    backdrop-filter: blur(14px);
+    transition: transform 0.18s ease, border-color 0.18s ease;
+  }
+
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--gradient);
+    opacity: 0.8;
+  }
+
+  .stat-card:hover { transform: translateY(-3px); border-color: rgba(99, 102, 241, 0.4); }
+
+  .stat-value {
+    font-size: 34px;
+    font-weight: 800;
+    line-height: 1.2;
+    background: var(--gradient);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  .stat-label {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-top: 6px;
+  }
+
+  /* ========== Table ========== */
+  .table-container {
+    overflow-x: auto;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+  }
+
+  .table-container table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  .table-container th {
+    text-align: left;
+    padding: 12px 16px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  .table-container td {
+    padding: 13px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .table-container tbody tr { transition: background 0.15s; }
+  .table-container tbody tr:hover { background: rgba(99, 102, 241, 0.06); }
+  .table-container tbody tr:last-child td { border-bottom: none; }
+
+  /* ========== Modals ========== */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 900;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(5, 8, 18, 0.65);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  .modal-overlay.active { display: flex; animation: fadeIn 0.18s ease; }
+
+  .modal {
+    width: min(440px, 100%);
+    background: rgba(20, 26, 46, 0.94);
+    border: 1px solid var(--border-strong);
+    border-radius: 18px;
+    padding: 26px;
+    box-shadow: var(--shadow-lg);
+    animation: popIn 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+
+  .modal-title { font-size: 17px; font-weight: 700; }
+
+  .modal-close {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .modal-close:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+    background: var(--surface-light);
+  }
+
+  /* ========== Preview ========== */
+  .preview-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: none;
+    flex-direction: column;
+    background: rgba(6, 9, 20, 0.82);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .preview-overlay.active { display: flex; animation: fadeIn 0.2s ease; }
+
+  .preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px 22px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10, 14, 26, 0.6);
+    backdrop-filter: blur(14px);
+  }
+
+  .preview-filename {
+    font-weight: 600;
+    font-size: 15px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .preview-actions { display: flex; gap: 10px; flex-shrink: 0; }
+
+  .preview-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    overflow: auto;
+  }
+
+  .preview-image {
+    max-width: 100%;
+    max-height: 82vh;
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .preview-pdf {
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 12px;
+    background: #fff;
+  }
+
+  .preview-text {
+    width: 100%;
+    max-width: 900px;
+    max-height: 82vh;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    background: rgba(5, 8, 18, 0.6);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 24px;
+  }
+
+  .preview-video {
+    max-width: 100%;
+    max-height: 82vh;
+    border-radius: 12px;
+    background: #000;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .preview-audio { width: min(560px, 92%); }
+
+  .preview-office {
+    width: 100%;
+    max-width: 900px;
+    max-height: 82vh;
+    overflow: auto;
+  }
+
+  .preview-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    color: var(--text-muted);
+  }
+
+  .preview-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    color: var(--error);
+    padding: 40px;
+  }
+
+  .preview-markdown {
+    max-width: 860px;
+    width: 100%;
+    background: rgba(15, 20, 38, 0.85);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 30px 32px;
+    overflow: auto;
+    line-height: 1.75;
+  }
+
+  .preview-markdown h1, .preview-markdown h2 {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+    margin: 22px 0 12px;
+  }
+  .preview-markdown h1 { font-size: 24px; }
+  .preview-markdown h2 { font-size: 20px; }
+  .preview-markdown h3 { font-size: 17px; margin: 18px 0 10px; }
+  .preview-markdown p { margin: 10px 0; }
+
+  .preview-markdown code {
+    background: rgba(255, 255, 255, 0.08);
+    padding: 2px 7px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  }
+
+  .preview-markdown pre {
+    background: rgba(0, 0, 0, 0.35);
+    padding: 16px;
+    border-radius: 12px;
+    overflow: auto;
+    margin: 12px 0;
+  }
+  .preview-markdown pre code { background: transparent; padding: 0; }
+
+  .preview-markdown blockquote {
+    border-left: 3px solid var(--primary);
+    padding-left: 14px;
+    color: var(--text-muted);
+    margin: 12px 0;
+  }
+
+  .preview-markdown img { max-width: 100%; border-radius: 10px; }
+  .preview-markdown a { color: var(--accent); }
+  .preview-markdown ul, .preview-markdown ol { padding-left: 24px; margin: 10px 0; }
+
+  .preview-markdown table { border-collapse: collapse; margin: 12px 0; }
+  .preview-markdown th, .preview-markdown td {
+    border: 1px solid var(--border-strong);
+    padding: 8px 12px;
+  }
+
+  /* ========== Toast ========== */
+  .toast-container {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 1200;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .toast {
+    padding: 12px 18px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    max-width: 340px;
+    background: rgba(20, 26, 46, 0.94);
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-lg);
+    backdrop-filter: blur(12px);
+    animation: toastIn 0.28s cubic-bezier(0.21, 1.02, 0.73, 1);
+  }
+
+  .toast-success { border-left: 3px solid var(--success); }
+  .toast-error { border-left: 3px solid var(--error); }
+  .toast-info { border-left: 3px solid var(--accent); }
+
+  /* ========== Loading / Spinner ========== */
+  .loading-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(6, 9, 20, 0.55);
+    backdrop-filter: blur(4px);
+  }
+
+  .spinner {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 3px solid rgba(255, 255, 255, 0.12);
+    border-top-color: var(--primary-light);
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ========== Share Page ========== */
+  .share-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .share-card {
+    width: min(460px, 100%);
+    background: rgba(17, 23, 42, 0.8);
+    border: 1px solid var(--border-strong);
+    border-radius: 20px;
+    padding: 36px 32px;
+    text-align: center;
+    box-shadow: var(--shadow-lg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    animation: fadeUp 0.4s ease;
+  }
+
+  .share-icon { font-size: 52px; margin-bottom: 14px; }
+  .share-filename { font-size: 18px; font-weight: 700; word-break: break-all; margin-bottom: 6px; }
+  .share-filesize { color: var(--text-muted); font-size: 13px; margin-bottom: 22px; }
+  .share-expired { color: var(--error); font-size: 15px; padding: 30px 10px; }
+
+  /* ========== Context Menu ========== */
+  .context-menu {
+    position: fixed;
+    z-index: 1300;
+    min-width: 160px;
+    background: rgba(20, 26, 46, 0.96);
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    padding: 6px;
+    box-shadow: var(--shadow-lg);
+    backdrop-filter: blur(14px);
+  }
+
+  .context-menu-item {
+    padding: 9px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.13s;
+  }
+
+  .context-menu-item:hover { background: rgba(99, 102, 241, 0.16); }
+
+  /* ========== Upload Area ========== */
+  .upload-area {
+    border: 2px dashed rgba(255, 255, 255, 0.18);
+    border-radius: var(--radius);
+    padding: 42px 20px;
+    text-align: center;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.02);
+    transition: all 0.18s ease;
+  }
+
+  .upload-area:hover,
+  .upload-area.dragover {
+    border-color: var(--primary);
+    background: rgba(99, 102, 241, 0.07);
+    color: var(--text);
+  }
+
+  .upload-area input { display: none; }
+
+  /* ========== Share Source Picker ========== */
+  .share-src-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .share-src-tab {
+    flex: 1; padding: 9px 0; border-radius: 10px; cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    background: rgba(255, 255, 255, 0.03); color: var(--text-muted);
+    font-size: 13px; transition: all 0.18s ease;
+  }
+  .share-src-tab:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.22); }
+  .share-src-tab.active {
+    color: #fff; border-color: rgba(139, 124, 255, 0.55);
+    background: linear-gradient(135deg, rgba(109, 124, 255, 0.25), rgba(157, 92, 255, 0.25));
+  }
+  .share-browse-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .share-browse-path {
+    flex: 1; font-size: 12px; color: var(--text-muted); font-family: monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .share-browse-list {
+    max-height: 220px; overflow-y: auto;
+    border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px;
+    background: rgba(0, 0, 0, 0.18);
+  }
+  .share-browse-item {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    cursor: pointer; font-size: 13px; border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+  .share-browse-item:last-child { border-bottom: none; }
+  .share-browse-item:hover { background: rgba(99, 102, 241, 0.12); }
+  .share-browse-item.selected { background: rgba(99, 102, 241, 0.22); }
+  .sbi-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  .sbi-size { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+  .share-browse-loading { padding: 18px; text-align: center; color: var(--text-muted); font-size: 12px; }
+  .share-picked {
+    display: none; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 12px;
+    border-radius: 10px; background: rgba(45, 212, 255, 0.08);
+    border: 1px solid rgba(45, 212, 255, 0.25); color: var(--text); font-size: 13px;
+  }
+  .share-upload-dest { margin-top: 8px; font-size: 12px; color: var(--text-muted); }
+  .share-upload-dest b { color: var(--text); }
+  .share-modal-upload .upload-area { padding: 24px 16px; cursor: pointer; }
+
+  /* ========== Keyframes ========== */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes popIn {
+    from { opacity: 0; transform: scale(0.92) translateY(8px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateX(30px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes float {
+    from { transform: translate(0, 0); }
+    to { transform: translate(24px, 32px); }
+  }
+
+  /* ========== Responsive ========== */
+  @media (max-width: 720px) {
+    .header { padding: 12px 16px; }
+    .container { padding: 16px 14px 50px; }
+    .file-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+    .file-actions .btn-sm { padding: 4px 8px; font-size: 11px; }
+    .toolbar .btn { flex: 1; }
+    .tabs { width: 100%; justify-content: space-around; }
+    .tab { padding: 8px 12px; font-size: 13px; }
+    .login-card { padding: 34px 24px; }
+  }
+</style>
+
+</head>
+<body>
+  <div class="share-container">
+    <div class="share-card" id="shareCard">
+      <div id="loadingState">
+        <div class="spinner" style="margin: 0 auto 20px;"></div>
+        <div>加载中...</div>
+      </div>
+
+      <div id="expiredState" style="display: none;">
+        <div class="share-icon">⚠️</div>
+        <div class="share-expired">分享链接已过期或不存在</div>
+        <p style="color: var(--text-muted); margin-top: 16px;">请联系分享者获取新的链接</p>
+      </div>
+
+      <div id="shareContent" style="display: none;">
+        <div class="share-icon" id="shareIcon">📄</div>
+        <div class="share-filename" id="fileName"></div>
+        <div class="share-filesize" id="fileSize"></div>
+
+        <div id="passwordForm" style="display: none;">
+          <div class="form-group">
+            <label class="form-label">请输入分享密码</label>
+            <input type="password" id="sharePassword" class="form-input" placeholder="输入密码">
+          </div>
+        </div>
+
+        <div id="fileListView" style="display: none; max-height: 320px; overflow-y: auto; text-align: left; margin-top: 12px; border: 1px solid var(--border-color, rgba(128,128,128,.25)); border-radius: 10px; padding: 6px;"></div>
+
+        <button class="btn btn-primary" style="width: 100%; margin-top: 20px;" id="mainBtn" onclick="downloadAll()">下载文件</button>
+        <button class="btn btn-secondary" style="width: 100%; margin-top: 10px; display: none;" id="zipBtn" onclick="downloadZip()">📦 打包下载 (ZIP)</button>
+      </div>
+    </div>
+  </div>
+
+  <iframe name="dlFrame" style="display: none;"></iframe>
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script>
+    let shareId = '';
+    let requiresPassword = false;
+    let shareType = 'file';
+    let shareFiles = [];
+
+    async function loadShareInfo() {
+      const pathParts = window.location.pathname.split('/');
+      shareId = pathParts[pathParts.length - 1];
+
+      if (!shareId) {
+        showExpired();
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/share/' + shareId);
+        const data = await response.json();
+
+        if (!data.success) {
+          showExpired();
+          return;
+        }
+
+        document.getElementById('loadingState').style.display = 'none';
+        document.getElementById('shareContent').style.display = 'block';
+
+        shareType = data.type || 'file';
+        shareFiles = data.files || [];
+        requiresPassword = !!data.requiresPassword;
+
+        document.getElementById('fileName').textContent = data.fileName;
+        const mainBtn = document.getElementById('mainBtn');
+        const zipBtn = document.getElementById('zipBtn');
+
+        if (shareType === 'folder') {
+          document.getElementById('shareIcon').textContent = '📁';
+          document.getElementById('fileSize').textContent = data.fileCount + ' 个文件 · ' + data.fileSizeFormatted;
+          mainBtn.style.display = 'none';
+          zipBtn.style.display = 'block';
+        } else if (shareType === 'multi') {
+          document.getElementById('shareIcon').textContent = '🗂️';
+          document.getElementById('fileSize').textContent = data.fileCount + ' 个文件 · ' + data.fileSizeFormatted;
+          mainBtn.style.display = 'none';
+          zipBtn.style.display = 'block';
+        } else {
+          document.getElementById('fileSize').textContent = data.fileSizeFormatted;
+        }
+
+        if (requiresPassword) {
+          document.getElementById('passwordForm').style.display = 'block';
+        }
+
+        if (shareType !== 'file' && !requiresPassword && shareFiles.length) {
+          renderFileList(shareFiles);
+        }
+      } catch (error) {
+        showExpired();
+      }
+    }
+
+    let fileListShown = false;
+
+    function renderFileList(files) {
+      const listView = document.getElementById('fileListView');
+      let html = '';
+      files.forEach(function(f, i) {
+        const displayName = f.path.indexOf('/') >= 0 ? f.path : f.name;
+        const inFolder = displayName.indexOf('/') >= 0;
+        html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--border-color, rgba(128,128,128,.15));">' +
+          '<span style="flex-shrink:0;">' + (inFolder ? '📁' : getFileIconSimple(displayName)) + '</span>' +
+          '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeAttr(displayName) + '">' + escapeHtml(displayName) + '</span>' +
+          '<span style="flex-shrink:0;color:var(--text-muted);font-size:12px;">' + f.sizeFormatted + '</span>' +
+          '<button class="btn btn-sm btn-secondary" style="flex-shrink:0;" onclick="downloadOne(' + i + ')">下载</button>' +
+        '</div>';
+      });
+      if (!html) html = '<div style="padding:14px;color:var(--text-muted);text-align:center;">此分享为空</div>';
+      listView.innerHTML = html;
+      listView.style.display = 'block';
+      fileListShown = true;
+    }
+
+    function getFileIconSimple(name) {
+      const ext = name.split('.').pop().toLowerCase();
+      if (['jpg','jpeg','png','gif','svg','webp','bmp','ico'].indexOf(ext) >= 0) return '🖼️';
+      if (['mp3','wav','flac','m4a','ogg','aac'].indexOf(ext) >= 0) return '🎵';
+      if (['mp4','avi','mkv','mov','webm','flv'].indexOf(ext) >= 0) return '🎬';
+      if (['zip','rar','7z','tar','gz','bz2'].indexOf(ext) >= 0) return '📦';
+      if (ext === 'pdf') return '📕';
+      if (ext === 'doc' || ext === 'docx') return '📘';
+      if (ext === 'xls' || ext === 'xlsx') return '📗';
+      return '📄';
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text == null ? '' : String(text);
+      return div.innerHTML;
+    }
+
+    function escapeAttr(text) {
+      return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function showExpired() {
+      document.getElementById('loadingState').style.display = 'none';
+      document.getElementById('expiredState').style.display = 'block';
+    }
+
+    function getPassword() {
+      const el = document.getElementById('sharePassword');
+      return el ? el.value : '';
+    }
+
+    async function verifyPasswordIfNeeded() {
+      if (!requiresPassword) return true;
+      const password = getPassword();
+      if (!password) {
+        showToast('请输入分享密码', 'error');
+        return false;
+      }
+      try {
+        const resp = await fetch('/api/share/' + shareId + '/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: password })
+        });
+        if (!resp.ok) {
+          const data = await resp.json().catch(function() { return {}; });
+          showToast(data.message || '密码错误', 'error');
+          return false;
+        }
+        // 验密成功后补拉加密分享的文件清单（info 接口对加密分享不返回 files）
+        const vdata = await resp.json().catch(function() { return {}; });
+        if (vdata.success && Array.isArray(vdata.files) && shareType !== 'file' && !fileListShown) {
+          renderFileList(vdata.files);
+        }
+        return true;
+      } catch (e) {
+        showToast('校验失败: ' + e.message, 'error');
+        return false;
+      }
+    }
+
+    // 通过隐藏 iframe + form POST 触发浏览器原生流式下载（不经内存 blob，大文件也不怕）
+    function postDownload(action, fields) {
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = action;
+      form.target = 'dlFrame';
+      form.style.display = 'none';
+      Object.keys(fields).forEach(function(k) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = k;
+        input.value = fields[k];
+        form.appendChild(input);
+      });
+      document.body.appendChild(form);
+      form.submit();
+      setTimeout(function() { form.remove(); }, 60000);
+    }
+
+    async function downloadAll() {
+      if (!await verifyPasswordIfNeeded()) return;
+      if (shareType === 'file') {
+        postDownload('/api/share/' + shareId + '/download', { password: getPassword() });
+        showToast('下载开始', 'success');
+      } else {
+        downloadZip();
+      }
+    }
+
+    async function downloadZip() {
+      if (!await verifyPasswordIfNeeded()) return;
+      postDownload('/api/share/' + shareId + '/zip', { password: getPassword() });
+      showToast('打包下载已开始', 'success');
+    }
+
+    async function downloadOne(i) {
+      if (!await verifyPasswordIfNeeded()) return;
+      const f = shareFiles[i];
+      if (!f) return;
+      postDownload('/api/share/' + shareId + '/file', { password: getPassword(), path: f.path });
+      showToast('已开始下载: ' + f.name, 'success');
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = 'toast toast-' + type;
+      toast.textContent = message;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.remove();
+      }, 3000);
+    }
+
+    // Initialize
+    loadShareInfo();
+  </script>
+</body>
+</html>

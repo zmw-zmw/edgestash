@@ -1,20 +1,38 @@
-name = "edgestash"
+name = "ysxb-edgestash"
 main = "worker.js"
 compatibility_date = "2025-08-16"
 
-# 按需修改：你的 R2 桶名
+# R2 桶绑定（文件存储）
 [[r2_buckets]]
 binding = "R2_BUCKET"
-bucket_name = "edgestash"
+bucket_name = "ysxb-edgestash"
 
-# 按需修改：你的 KV namespace id
+# KV 命名空间绑定（元数据存储）
 [[kv_namespaces]]
 binding = "KV_STORE"
-id = "00000000000000000000000000000000"
+id = "4a9ac72baea540c1a28b7536cde788d4"
 
 [vars]
 # 设为 "true" 开放自助注册（默认关闭）
 REGISTER_ENABLED = "false"
 
-# ADMIN_PASSWORD 用 secret 存储，不要写进本文件：
+# ─────────────────────────────────────────────────────────────
+# 注意：前端页面不在 worker.js 里，而是放在仓库的 pages/ 目录，
+# 运行时由 Worker 从 R2 桶的 __pages__/ 前缀读取。部署前必须先上传：
+#
+#   pages/index.html -> __pages__/index.html
+#   pages/admin.html -> __pages__/admin.html
+#   pages/share.html -> __pages__/share.html
+#   pages/login.html -> __pages__/login.html
+#
+# 用 wrangler 上传（把 ysxb-edgestash 换成你的桶名）：
+#   for f in index admin share login; do
+#     npx wrangler r2 object put "ysxb-edgestash/__pages__/$f.html" --file "pages/$f.html" --remote
+#   done
+#
+# 漏传的话页面会显示「页面加载失败，请刷新重试。」
+# ─────────────────────────────────────────────────────────────
+
+# ADMIN_PASSWORD / JWT_SECRET 用 secret 存储，不要写进本文件：
 #   npx wrangler secret put ADMIN_PASSWORD
+#   npx wrangler secret put JWT_SECRET

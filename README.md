@@ -1,7 +1,7 @@
 # EdgeStash (Enhanced Fork)
 
 基于 **Cloudflare Workers + R2 + KV** 的轻量多用户云盘。
-**单文件部署**（`worker.js`），无需数据库、无需服务器，全部数据都在你自己的 Cloudflare 账户里。
+**单文件 Worker**（`worker.js`）+ 4 个静态页面（[`pages/`](pages/)），无需服务器、无需数据库，全部数据都在你自己的 Cloudflare 账户里。
 
 > 本仓库是 [hhy-2021/EdgeStash](https://github.com/hhy-2021/EdgeStash)（MIT）的增强分支。
 > 在上游基础上修复了多个已知 Bug 与安全问题，并新增分享 v2、配额、批量管理等能力。
@@ -29,7 +29,11 @@
 特殊字符文件名在预览/下载时 404、文件夹删不掉、删除接口误报成功、分享只能分享单个文件、
 音视频预览无法拖动进度条、以及若干安全隐患（zip-slip、XSS、分享清单泄露等）。
 
-本分支在上游代码基础上做了系统性的修复与增强，**保持单文件、零依赖、Dashboard 可直接粘贴部署**的形态不变。
+本分支在上游代码基础上做了系统性的修复与增强，**保持零依赖、Dashboard 可直接粘贴部署**的形态不变。
+
+> 唯一的结构性变化：4 个前端页面从 `worker.js` 的内联字符串移到了 [`pages/`](pages/)，运行时由 Worker 从 R2 的 `__pages__/` 前缀读取（详见 [部署](#部署) 第 6 步）。
+> 这么做是为了把 Worker 模块体积从 **176KB / 4924 行降到 72KB / 2016 行**——免费版 Workers 的 CPU 预算极紧，原先的大模块在冷启动时会超时导致间歇性 504。
+> **因此部署时除了粘贴 `worker.js`，还需要把 `pages/` 里的 4 个文件上传到 R2。**
 
 ## 特性总览
 
@@ -116,8 +120,21 @@ README 中提到的「管理员登录无反应」已知 Bug 也已修复。
    | Secret（可选，推荐） | `JWT_SECRET` | 独立 JWT 签名密钥，任意长随机字符串 |
    | 环境变量（可选） | `REGISTER_ENABLED` | 站点已有用户后，设为 `true` 开放自助注册 |
 
-6. **完成**：访问 `https://<worker-name>.<subdomain>.workers.dev` → 打开注册页，**第一个注册的账号自动成为管理员**（用户名密码自定）。此后注册遵循 `REGISTER_ENABLED` 开关，新用户为普通用户，由管理员在后台创建或审核
-7. 可选：在 Worker → 设置 → 域和路由 绑定自定义域名
+6. **上传页面文件到 R2**：本分支的 4 个前端页面放在仓库的 [`pages/`](pages/) 目录，运行时由 Worker 从 R2 读取，所以必须上传。目标位置是 R2 桶里的 `__pages__/` 前缀：
+
+   | 仓库文件 | R2 对象键 |
+   |---|---|
+   | `pages/index.html` | `__pages__/index.html` |
+   | `pages/admin.html` | `__pages__/admin.html` |
+   | `pages/share.html` | `__pages__/share.html` |
+   | `pages/login.html` | `__pages__/login.html` |
+
+   Dashboard 操作：R2 → 进入你的桶 → 上传对象 → **键名要手填成 `__pages__/index.html` 这种形式**（不能只填 `index.html`，否则 Worker 读不到，页面会显示「页面加载失败，请刷新重试。」）。
+
+   命令行方式见下方「方式二」的 `wrangler r2 object put`。
+
+7. **完成**：访问 `https://<worker-name>.<subdomain>.workers.dev` → 打开注册页，**第一个注册的账号自动成为管理员**（用户名密码自定）。此后注册遵循 `REGISTER_ENABLED` 开关，新用户为普通用户，由管理员在后台创建或审核
+8. 可选：在 Worker → 设置 → 域和路由 绑定自定义域名
 
 ### 方式二：Wrangler 命令行
 
@@ -130,10 +147,16 @@ npx wrangler secret put ADMIN_PASSWORD
 # 推荐再加一个独立签名密钥：
 npx wrangler secret put JWT_SECRET
 
+# 上传 4 个页面到 R2 的 __pages__/ 前缀（把 edgestash 换成你的桶名）
+for f in index admin share login; do
+  npx wrangler r2 object put "edgestash/__pages__/$f.html" --file "pages/$f.html" --remote
+done
+
 npx wrangler deploy
 ```
 
 > `wrangler.toml` 中预留了 `REGISTER_ENABLED` 开关，按需修改。
+> 页面文件在 [`pages/`](pages/)，必须上传到 R2 才能正常显示（原因见「方式一」第 6 步）。
 
 ## 使用指南
 
