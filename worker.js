@@ -1,16 +1,3 @@
-/**
- * EdgeStash - Cloudflare-based Cloud Drive
- * 
- * A complete cloud storage solution built on Cloudflare Worker, R2, and KV.
- * 
- * Environment Variables (set in Cloudflare Dashboard):
- * - ADMIN_PASSWORD: Administrator password for login
- * 
- * Bindings (set in Cloudflare Dashboard):
- * - R2_BUCKET: R2 bucket binding for file storage
- * - KV_STORE: KV namespace binding for metadata storage
- */
-
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
@@ -1813,6 +1800,132 @@ async function loadPage(env, key) {
   return html;
 }
 
+// ============ URL 抓取（合并自 mod-mirror）============
+// 把外部 https 链接由 Cloudflare 边缘代抓，直接落进用户自己的网盘目录。
+// 复用 EdgeStash 的 JWT 鉴权 / 用户隔离前缀 / 配额体系，抓完的文件与上传文件同等对待（可分享、可预览）。
+const GRAB_UA = 'drop-welkin/1.0';
+const GRAB_BUFFER_LIMIT = 100 * 1024 * 1024;
+
+function grabValidateTarget(searchParams) {
+  const target = searchParams.get('url');
+  if (!target) throw { status: 400, message: '缺少 url 参数' };
+  let tu;
+  try { tu = new URL(target); } catch (e) { throw { status: 400, message: 'URL 格式不对' }; }
+  if (tu.protocol !== 'https:') throw { status: 400, message: '只支持 https 链接' };
+  const h = String(tu.hostname || '').toLowerCase();
+  if (!h || h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal') || h.endsWith('.home.arpa')) {
+    throw { status: 403, message: '这个地址不允许抓取' };
+  }
+  if (/^(127\.|10\.|0\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(h)) {
+    throw { status: 403, message: '这个地址不允许抓取' };
+  }
+  if (h === '::1' || h === '::' || h.startsWith('fe80:') || h.startsWith('fc') || h.startsWith('fd')) {
+    throw { status: 403, message: '这个地址不允许抓取' };
+  }
+  let name = searchParams.get('name') || '';
+  if (!name) name = decodeURIComponent((tu.pathname.split('/').pop() || '')) || '';
+  if (!/[\p{L}\p{N}]/u.test(name)) throw { status: 400, message: '无法从链接判断文件名，请手动填写 name 参数' };
+  name = name.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0, 120).trim();
+  if (!name) throw { status: 400, message: '文件名不合法' };
+  return { target, name };
+}
+
+async function grabOpenUpstream(target) {
+  let resp;
+  try {
+    resp = await fetch(target, { headers: { 'user-agent': GRAB_UA } });
+  } catch (e) {
+    throw { status: 502, message: '连不上上游：' + (e && e.message ? e.message : e) };
+  }
+  if (!resp.ok || !resp.body) throw { status: 502, message: '上游返回 ' + resp.status };
+  return resp;
+}
+
+async function handleGrabSSE(url, env, auth, ctx) {
+  const { readable, writable } = new TransformStream();
+  const writer = writable.getWriter();
+  const enc = new TextEncoder();
+  const push = (obj) => writer.write(enc.encode('data: ' + JSON.stringify(obj) + '\n\n')).catch(() => {});
+  ctx.waitUntil((async () => {
+    try {
+      const { target, name } = grabValidateTarget(url.searchParams);
+      let folder = (url.searchParams.get('folder') || 'grab/').replace(/^\/+/, '');
+      folder = folder.split('/').filter(seg => seg && seg !== '.' && seg !== '..').join('/');
+      if (folder) folder += '/'; else folder = 'grab/';
+
+      const resp = await grabOpenUpstream(target);
+      const total = Number(resp.headers.get('content-length')) || 0;
+      const contentType = resp.headers.get('content-type') || 'application/octet-stream';
+
+      // 配额与全局上限（与上传同一套规则）
+      const quotaBytes = await getUserQuotaBytes(env, auth.email);
+      if (quotaBytes > 0 && total > 0 && (await getUserUsedBytes(env, auth.email)) + total > quotaBytes) {
+        await push({ error: '存储空间不足：配额 ' + formatFileSize(quotaBytes) + '，本文件 ' + formatFileSize(total) });
+        await writer.close(); return;
+      }
+      const capBytes = await getStorageCapBytes(env);
+      if (capBytes > 0 && total > 0 && (await getGlobalUsedBytes(env)) + total > capBytes) {
+        await push({ error: '云盘额度不够：已用 ' + formatFileSize(await getGlobalUsedBytes(env)) + ' / 上限 ' + formatFileSize(capBytes) });
+        await writer.close(); return;
+      }
+
+      const scope = userScope(auth);
+      const key = scope + folder + name;
+      await push({ start: true, name: name, total: total, path: '/' + folder + name });
+
+      let actualSize = total;
+      if (total > 0) {
+        const [toR2, toCount] = resp.body.tee();
+        const putPromise = env.R2_BUCKET.put(key, toR2, { httpMetadata: { contentType: contentType } });
+        const reader = toCount.getReader();
+        let received = 0; let last = 0;
+        for (;;) {
+          const r = await reader.read();
+          if (r.done) break;
+          received += r.value.length;
+          const now = Date.now();
+          if (now - last >= 250) {
+            last = now;
+            await push({ received: received, total: total, percent: Math.min(100, Math.round(received / total * 100)) });
+          }
+        }
+        await putPromise;
+        actualSize = received;
+      } else {
+        const chunks = []; let buffered = 0;
+        const reader = resp.body.getReader();
+        for (;;) {
+          const r = await reader.read();
+          if (r.done) break;
+          buffered += r.value.length;
+          if (buffered > GRAB_BUFFER_LIMIT) {
+            await reader.cancel();
+            await push({ error: '上游没声明文件大小，且超过 100MB；换一个直接给 content-length 的地址（如 raw.githubusercontent.com）' });
+            await writer.close(); return;
+          }
+          chunks.push(r.value);
+        }
+        const buf = new Uint8Array(buffered); let off = 0;
+        for (const c of chunks) { buf.set(c, off); off += c.length; }
+        await env.R2_BUCKET.put(key, buf.buffer, { httpMetadata: { contentType: contentType } });
+        await push({ received: buffered, total: buffered, percent: 100 });
+        actualSize = buffered;
+      }
+      await push({ done: true, name: name, path: '/' + folder + name, size: actualSize });
+    } catch (e) {
+      await push({ error: (e && e.message) ? e.message : '抓取失败' });
+    } finally {
+      try { await writer.close(); } catch (e) {}
+    }
+  })());
+  return new Response(readable, {
+    headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' }
+  });
+}
+
+const GRAB_HTML = "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, viewport-fit=cover\">\n<meta name=\"robots\" content=\"noindex, nofollow\">\n<title>URL 抓取 - EdgeStash</title>\n<style>\n  :root {\n    --primary: #818cf8;\n    --primary-dark: #6366f1;\n    --primary-light: #a5b4fc;\n    --background: #0a0e1a;\n    --surface: rgba(255, 255, 255, 0.045);\n    --surface-light: rgba(255, 255, 255, 0.09);\n    --border: rgba(255, 255, 255, 0.09);\n    --border-strong: rgba(255, 255, 255, 0.16);\n    --text: #eef2ff;\n    --text-muted: #8b93b0;\n    --danger: #f87171;\n  }\n  * { box-sizing: border-box; margin: 0; padding: 0; }\n  body {\n    background: var(--background);\n    color: var(--text);\n    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;\n    min-height: 100vh;\n    padding: 24px 16px 40px;\n  }\n  .wrap { max-width: 680px; margin: 0 auto; }\n  .page-head { text-align: center; margin-bottom: 22px; animation: fadeUp .35s ease; }\n  .page-head h1 {\n    font-size: 24px; font-weight: 700; margin-bottom: 6px;\n    background: linear-gradient(135deg, #6d7cff 0%, #9d5cff 55%, #2dd4ff 100%);\n    -webkit-background-clip: text; background-clip: text;\n    -webkit-text-fill-color: transparent;\n  }\n  .page-head p { color: var(--text-muted); font-size: 13px; }\n  .card {\n    background: var(--surface);\n    border: 1px solid var(--border);\n    border-radius: 14px;\n    padding: 22px;\n    backdrop-filter: blur(14px);\n    -webkit-backdrop-filter: blur(14px);\n    animation: fadeUp .35s ease;\n  }\n  label { display: block; font-size: 12.5px; color: var(--text-muted); margin: 14px 0 6px; }\n  label:first-of-type { margin-top: 0; }\n  input[type=\"text\"] {\n    width: 100%;\n    padding: 11px 14px;\n    background: var(--surface-light);\n    border: 1px solid var(--border-strong);\n    border-radius: 10px;\n    color: var(--text);\n    font-size: 14px;\n    font-family: inherit;\n    transition: border-color .2s, box-shadow .2s;\n  }\n  input[type=\"text\"]::placeholder { color: rgba(139, 147, 176, 0.55); }\n  input[type=\"text\"]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.15); }\n  .btn {\n    display: inline-flex; align-items: center; justify-content: center; gap: 7px;\n    padding: 11px 20px; border: 1px solid transparent; border-radius: 11px;\n    font-size: 14px; font-weight: 600; font-family: inherit;\n    cursor: pointer; text-decoration: none; white-space: nowrap;\n    transition: transform .16s ease, box-shadow .16s ease, opacity .16s ease;\n  }\n  .btn-primary {\n    background: linear-gradient(135deg, #6d7cff 0%, #9d5cff 55%, #2dd4ff 100%);\n    color: #fff; width: 100%; margin-top: 18px;\n    box-shadow: 0 4px 18px rgba(109, 124, 255, 0.28);\n  }\n  .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 22px rgba(109, 124, 255, 0.4); }\n  .btn-primary:disabled { opacity: .55; cursor: not-allowed; transform: none; }\n  .bar {\n    height: 8px; background: rgba(255, 255, 255, 0.06);\n    border: 1px solid var(--border); border-radius: 999px;\n    margin-top: 18px; overflow: hidden;\n  }\n  #fill {\n    height: 100%; width: 0%;\n    background: linear-gradient(90deg, #6d7cff, #9d5cff, #2dd4ff);\n    border-radius: 999px; transition: width .25s ease;\n  }\n  #msg { margin-top: 12px; font-size: 13.5px; color: var(--text-muted); min-height: 18px; }\n  #msg.err { color: var(--danger); }\n  #done { margin-top: 10px; font-size: 13.5px; color: var(--text); }\n  #done a { color: var(--primary-light); }\n  .back { text-align: center; margin-top: 18px; }\n  .back a { color: var(--text-muted); font-size: 13px; text-decoration: none; }\n  .back a:hover { color: var(--primary-light); }\n  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }\n</style>\n</head>\n<body>\n<div class=\"wrap\">\n  <div class=\"page-head\">\n    <h1>URL 抓取</h1>\n    <p>Cloudflare 边缘代为抓取外部文件，直接存入你的网盘（可分享、可预览）</p>\n  </div>\n  <div class=\"card\">\n    <label for=\"url\">文件直链（仅支持 https）</label>\n    <input type=\"text\" id=\"url\" placeholder=\"https://github.com/owner/repo/releases/download/...\" autocomplete=\"off\">\n    <label for=\"folder\">存入文件夹（网盘内相对路径）</label>\n    <input type=\"text\" id=\"folder\" value=\"grab/\" autocomplete=\"off\">\n    <label for=\"name\">文件名（可选，默认取链接末段）</label>\n    <input type=\"text\" id=\"name\" placeholder=\"自动识别\" autocomplete=\"off\">\n    <button class=\"btn btn-primary\" id=\"go\">开始抓取</button>\n    <div class=\"bar\"><div id=\"fill\"></div></div>\n    <div id=\"msg\"></div>\n    <div id=\"done\"></div>\n  </div>\n  <div class=\"back\"><a href=\"/\">← 返回网盘</a></div>\n</div>\n<script>\n(async function () {\n  try {\n    const r = await fetch('/api/auth/check');\n    const j = await r.json();\n    if (!j.authenticated) { location.href = '/login.html'; return; }\n  } catch (e) { location.href = '/login.html'; }\n})();\nvar $ = function (id) { return document.getElementById(id); };\n$('go').addEventListener('click', function () {\n  var u = $('url').value.trim();\n  if (!u) { $('msg').textContent = '请填入 URL'; $('msg').className = 'err'; return; }\n  var f = $('folder').value.trim() || 'grab/';\n  var n = $('name').value.trim();\n  $('go').disabled = true;\n  $('fill').style.width = '0%';\n  $('msg').textContent = '连接边缘节点…'; $('msg').className = '';\n  $('done').innerHTML = '';\n  var es = new EventSource('/api/grab?url=' + encodeURIComponent(u) + '&folder=' + encodeURIComponent(f) + (n ? '&name=' + encodeURIComponent(n) : ''));\n  es.onmessage = function (e) {\n    var d; try { d = JSON.parse(e.data); } catch (err) { return; }\n    if (d.error) {\n      $('msg').textContent = '失败：' + d.error; $('msg').className = 'err';\n      $('go').disabled = false; es.close(); return;\n    }\n    if (d.start) { $('msg').textContent = '开始：' + d.name + (d.total ? '（' + (d.total / 1048576).toFixed(1) + ' MB）' : ''); }\n    if (d.percent !== undefined) {\n      $('fill').style.width = (d.percent || 0) + '%';\n      $('msg').textContent = '下载中 ' + (d.percent !== null ? d.percent + '%' : '') + (d.received ? ' ' + (d.received / 1048576).toFixed(1) + ' MB' : '');\n    }\n    if (d.done) {\n      $('fill').style.width = '100%';\n      $('msg').textContent = '完成：' + d.name; $('msg').className = '';\n      $('done').innerHTML = '已存入网盘 ' + d.path + '，<a href=\"/\">返回网盘查看</a>，也可在网盘中生成分享链接';\n      es.close(); $('go').disabled = false;\n    }\n  };\n  es.onerror = function () {\n    if ($('msg').textContent.indexOf('完成') !== 0) { $('msg').textContent = '连接中断'; $('msg').className = 'err'; }\n    es.close(); $('go').disabled = false;\n  };\n});\n</script>\n</body>\n</html>\n";
+
+
 // ============================================================================
 // MAIN REQUEST HANDLER
 // ============================================================================
@@ -1975,6 +2088,11 @@ export default {
           return await handleDeleteUser(request, env, email);
         }
         
+        if (path === '/api/grab' && method === 'GET') {
+          const auth = await requireAuth(request, env);
+          if (auth instanceof Response) return auth;
+          return await handleGrabSSE(url, env, auth, ctx);
+        }
         return jsonResponse({ success: false, message: 'API 路径不存在' }, 404);
       }
       
@@ -2003,9 +2121,16 @@ export default {
         if (!auth) {
           return Response.redirect(url.origin + '/login.html', 302);
         }
-        return htmlResponse(await loadPage(env, 'index.html'));
+        const idxHtml = (await loadPage(env, 'index.html')).replace(
+          "<button class=\"btn btn-secondary\" id=\"adminBtn\" style=\"display:none;\" onclick=\"window.location.href='/admin.html'\">管理后台</button>",
+          "<button class=\"btn btn-secondary\" onclick=\"window.location.href='/grab.html'\">🌐 URL 抓取</button><button class=\"btn btn-secondary\" id=\"adminBtn\" style=\"display:none;\" onclick=\"window.location.href='/admin.html'\">管理后台</button>"
+        );
+        return htmlResponse(idxHtml);
       }
       
+      if (path === '/grab.html' || path === '/grab') {
+        return htmlResponse(GRAB_HTML);
+      }
       // Default: redirect to root
       return Response.redirect(url.origin + '/', 302);
       
