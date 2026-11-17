@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>URL 抓取 - EdgeStash</title>
+<style>
+  :root {
+    --primary: #818cf8;
+    --primary-dark: #6366f1;
+    --primary-light: #a5b4fc;
+    --background: #0a0e1a;
+    --surface: rgba(255, 255, 255, 0.045);
+    --surface-light: rgba(255, 255, 255, 0.09);
+    --border: rgba(255, 255, 255, 0.09);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --text: #eef2ff;
+    --text-muted: #8b93b0;
+    --danger: #f87171;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--background);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    min-height: 100vh;
+    padding: 24px 16px 40px;
+  }
+  .wrap { max-width: 680px; margin: 0 auto; }
+  .page-head { text-align: center; margin-bottom: 22px; animation: fadeUp .35s ease; }
+  .page-head h1 {
+    font-size: 24px; font-weight: 700; margin-bottom: 6px;
+    background: linear-gradient(135deg, #6d7cff 0%, #9d5cff 55%, #2dd4ff 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .page-head p { color: var(--text-muted); font-size: 13px; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    animation: fadeUp .35s ease;
+  }
+  label { display: block; font-size: 12.5px; color: var(--text-muted); margin: 14px 0 6px; }
+  label:first-of-type { margin-top: 0; }
+  input[type="text"] {
+    width: 100%;
+    padding: 11px 14px;
+    background: var(--surface-light);
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  input[type="text"]::placeholder { color: rgba(139, 147, 176, 0.55); }
+  input[type="text"]:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.15); }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    padding: 11px 20px; border: 1px solid transparent; border-radius: 11px;
+    font-size: 14px; font-weight: 600; font-family: inherit;
+    cursor: pointer; text-decoration: none; white-space: nowrap;
+    transition: transform .16s ease, box-shadow .16s ease, opacity .16s ease;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, #6d7cff 0%, #9d5cff 55%, #2dd4ff 100%);
+    color: #fff; width: 100%; margin-top: 18px;
+    box-shadow: 0 4px 18px rgba(109, 124, 255, 0.28);
+  }
+  .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 22px rgba(109, 124, 255, 0.4); }
+  .btn-primary:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+  .bar {
+    height: 8px; background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border); border-radius: 999px;
+    margin-top: 18px; overflow: hidden;
+  }
+  #fill {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #6d7cff, #9d5cff, #2dd4ff);
+    border-radius: 999px; transition: width .25s ease;
+  }
+  #msg { margin-top: 12px; font-size: 13.5px; color: var(--text-muted); min-height: 18px; }
+  #msg.err { color: var(--danger); }
+  #done { margin-top: 10px; font-size: 13.5px; color: var(--text); }
+  #done a { color: var(--primary-light); }
+  .back { text-align: center; margin-top: 18px; }
+  .back a { color: var(--text-muted); font-size: 13px; text-decoration: none; }
+  .back a:hover { color: var(--primary-light); }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="page-head">
+    <h1>URL 抓取</h1>
+    <p>Cloudflare 边缘代为抓取外部文件，直接存入你的网盘（可分享、可预览）</p>
+  </div>
+  <div class="card">
+    <label for="url">文件直链（仅支持 https）</label>
+    <input type="text" id="url" placeholder="https://github.com/owner/repo/releases/download/..." autocomplete="off">
+    <label for="folder">存入文件夹（网盘内相对路径）</label>
+    <input type="text" id="folder" value="grab/" autocomplete="off">
+    <label for="name">文件名（可选，默认取链接末段）</label>
+    <input type="text" id="name" placeholder="自动识别" autocomplete="off">
+    <button class="btn btn-primary" id="go">开始抓取</button>
+    <div class="bar"><div id="fill"></div></div>
+    <div id="msg"></div>
+    <div id="done"></div>
+  </div>
+  <div class="back"><a href="/">← 返回网盘</a></div>
+</div>
+<script>
+(async function () {
+  try {
+    const r = await fetch('/api/auth/check');
+    const j = await r.json();
+    if (!j.authenticated) { location.href = '/login.html'; return; }
+  } catch (e) { location.href = '/login.html'; }
+})();
+var $ = function (id) { return document.getElementById(id); };
+$('go').addEventListener('click', function () {
+  var u = $('url').value.trim();
+  if (!u) { $('msg').textContent = '请填入 URL'; $('msg').className = 'err'; return; }
+  var f = $('folder').value.trim() || 'grab/';
+  var n = $('name').value.trim();
+  $('go').disabled = true;
+  $('fill').style.width = '0%';
+  $('msg').textContent = '连接边缘节点…'; $('msg').className = '';
+  $('done').innerHTML = '';
+  var es = new EventSource('/api/grab?url=' + encodeURIComponent(u) + '&folder=' + encodeURIComponent(f) + (n ? '&name=' + encodeURIComponent(n) : ''));
+  es.onmessage = function (e) {
+    var d; try { d = JSON.parse(e.data); } catch (err) { return; }
+    if (d.error) {
+      $('msg').textContent = '失败：' + d.error; $('msg').className = 'err';
+      $('go').disabled = false; es.close(); return;
+    }
+    if (d.start) { $('msg').textContent = '开始：' + d.name + (d.total ? '（' + (d.total / 1048576).toFixed(1) + ' MB）' : ''); }
+    if (d.percent !== undefined) {
+      $('fill').style.width = (d.percent || 0) + '%';
+      $('msg').textContent = '下载中 ' + (d.percent !== null ? d.percent + '%' : '') + (d.received ? ' ' + (d.received / 1048576).toFixed(1) + ' MB' : '');
+    }
+    if (d.done) {
+      $('fill').style.width = '100%';
+      $('msg').textContent = '完成：' + d.name; $('msg').className = '';
+      $('done').innerHTML = '已存入网盘 ' + d.path + '，<a href="/">返回网盘查看</a>，也可在网盘中生成分享链接';
+      es.close(); $('go').disabled = false;
+    }
+  };
+  es.onerror = function () {
+    if ($('msg').textContent.indexOf('完成') !== 0) { $('msg').textContent = '连接中断'; $('msg').className = 'err'; }
+    es.close(); $('go').disabled = false;
+  };
+});
+</script>
+</body>
+</html>
